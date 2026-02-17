@@ -6,86 +6,64 @@ import GovHero from "@/components/GovHero";
 import GovUploadForm from "@/components/GovUploadForm";
 import GovLoadingState from "@/components/GovLoadingState";
 import GovDashboard from "@/components/GovDashboard";
-import { AnalysisResult, ApiResponse } from "@/types/analysis";
+import { AnalysisResult } from "@/types/analysis";
 
 type AppState = "home" | "form" | "loading" | "result" | "error";
 
-async function uploadVideoToGemini(
+// Upload video to server via SSE stream (keeps connection alive, avoids timeout)
+async function uploadVideoViaStream(
   videoFile: File,
-  apiKey: string,
   onProgress: (msg: string) => void
 ): Promise<{ fileUri: string; mimeType: string }> {
-  const mimeType = videoFile.type || "video/mp4";
+  const formData = new FormData();
+  formData.append("videoFile", videoFile);
 
-  // Step 1: Start resumable upload
-  onProgress("กำลังเตรียมอัปโหลดวิดีโอ...");
-  const startRes = await fetch(
-    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "X-Goog-Upload-Protocol": "resumable",
-        "X-Goog-Upload-Command": "start",
-        "X-Goog-Upload-Header-Content-Length": String(videoFile.size),
-        "X-Goog-Upload-Header-Content-Type": mimeType,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        file: { displayName: videoFile.name },
-      }),
-    }
-  );
-
-  const uploadUrl = startRes.headers.get("X-Goog-Upload-URL");
-  if (!uploadUrl) {
-    throw new Error("ไม่สามารถเริ่มอัปโหลดได้ กรุณาลองใหม่");
-  }
-
-  // Step 2: Upload file data
-  onProgress(`กำลังอัปโหลดวิดีโอ (${(videoFile.size / 1024 / 1024).toFixed(0)} MB)...`);
-  const uploadRes = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Length": String(videoFile.size),
-      "X-Goog-Upload-Offset": "0",
-      "X-Goog-Upload-Command": "upload, finalize",
-    },
-    body: videoFile,
+  const response = await fetch("/api/upload-video", {
+    method: "POST",
+    body: formData,
   });
 
-  const uploadData = await uploadRes.json();
-  const fileName = uploadData?.file?.name;
-  if (!fileName) {
-    throw new Error("อัปโหลดวิดีโอล้มเหลว กรุณาลองใหม่");
+  if (!response.ok || !response.body) {
+    throw new Error("ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้");
   }
 
-  // Step 3: Wait for processing
-  onProgress("Gemini กำลังประมวลผลวิดีโอ...");
-  let fileState = uploadData.file.state;
-  let fileUri = uploadData.file.uri;
-  let attempts = 0;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: { fileUri: string; mimeType: string } | null = null;
 
-  while (fileState === "PROCESSING" && attempts < 60) {
-    attempts++;
-    onProgress(`ประมวลผลวิดีโอ... (${attempts * 5} วินาที)`);
-    await new Promise((r) => setTimeout(r, 5000));
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
 
-    const checkRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/files/${fileName}?key=${apiKey}`
-    );
-    const checkData = await checkRes.json();
-    fileState = checkData.state;
-    fileUri = checkData.uri;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.type === "progress") {
+          onProgress(data.message);
+        } else if (data.type === "done") {
+          result = { fileUri: data.fileUri, mimeType: data.mimeType };
+        } else if (data.type === "error") {
+          throw new Error(data.error);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
+          throw e;
+        }
+      }
+    }
   }
 
-  if (fileState === "FAILED") {
-    throw new Error("Gemini ไม่สามารถประมวลผลวิดีโอได้ กรุณาตรวจสอบไฟล์");
-  }
-  if (fileState === "PROCESSING") {
-    throw new Error("วิดีโอใช้เวลาประมวลผลนานเกินไป กรุณาลองใช้คลิปสั้นลง");
+  if (!result) {
+    throw new Error("ไม่ได้รับผลลัพธ์จากการอัปโหลด กรุณาลองใหม่");
   }
 
-  return { fileUri, mimeType };
+  return result;
 }
 
 export default function Home() {
@@ -100,24 +78,17 @@ export default function Home() {
     setError("");
 
     try {
-      // === Step 1: Get API key from server ===
-      setLoadingMessage("กำลังเตรียมระบบ...");
-      const keyRes = await fetch("/api/gemini-key");
-      const keyData = await keyRes.json();
-      if (!keyData.success) {
-        throw new Error(keyData.error || "ไม่สามารถเชื่อมต่อระบบได้");
-      }
+      // === Step 1: Upload video via streaming (avoids timeout) ===
+      setLoadingMessage("กำลังเตรียมอัปโหลดวิดีโอ...");
 
-      // === Step 2: Upload video directly to Gemini from browser ===
-      const { fileUri, mimeType } = await uploadVideoToGemini(
+      const { fileUri, mimeType } = await uploadVideoViaStream(
         videoFile,
-        keyData.apiKey,
         setLoadingMessage
       );
 
       console.log("Video uploaded! fileUri:", fileUri);
 
-      // === Step 3: Analyze with fileUri + docx (lightweight request) ===
+      // === Step 2: Analyze with fileUri + docx (SSE stream) ===
       setLoadingMessage("กำลังวิเคราะห์ความสอดคล้อง...");
 
       const analyzeFormData = new FormData();
@@ -130,14 +101,49 @@ export default function Home() {
         body: analyzeFormData,
       });
 
-      const analyzeData: ApiResponse = await analyzeResponse.json();
+      if (!analyzeResponse.ok || !analyzeResponse.body) {
+        throw new Error("ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้");
+      }
 
-      if (analyzeData.success && analyzeData.data) {
-        setResult(analyzeData.data);
+      // Read SSE stream from analyze API
+      const analyzeReader = analyzeResponse.body.getReader();
+      const analyzeDecoder = new TextDecoder();
+      let analyzeBuf = "";
+      let analyzeResult: AnalysisResult | null = null;
+
+      while (true) {
+        const { done, value } = await analyzeReader.read();
+        if (done) break;
+
+        analyzeBuf += analyzeDecoder.decode(value, { stream: true });
+        const aLines = analyzeBuf.split("\n\n");
+        analyzeBuf = aLines.pop() || "";
+
+        for (const line of aLines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === "progress") {
+              setLoadingMessage(data.message);
+            } else if (data.type === "done") {
+              analyzeResult = data.data;
+            } else if (data.type === "error") {
+              throw new Error(data.error);
+            }
+          } catch (e) {
+            if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
+              throw e;
+            }
+          }
+        }
+      }
+
+      if (analyzeResult) {
+        setResult(analyzeResult);
         setState("result");
         setCurrentPage("dashboard");
       } else {
-        setError(analyzeData.error || "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+        setError("ไม่ได้รับผลวิเคราะห์ กรุณาลองใหม่อีกครั้ง");
         setState("error");
       }
     } catch (err) {
