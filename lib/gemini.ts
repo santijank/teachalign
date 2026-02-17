@@ -5,7 +5,13 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+function getAI() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not set");
+  }
+  return new GoogleGenAI({ apiKey });
+}
 
 async function saveBufferToTemp(buffer: Buffer, extension: string): Promise<string> {
   const tempDir = os.tmpdir();
@@ -19,6 +25,7 @@ async function uploadToGemini(filePath: string, mimeType: string): Promise<strin
   const fileSize = fs.statSync(filePath).size;
   console.log(`Uploading to Gemini File API (${(fileSize / 1024 / 1024).toFixed(1)} MB)...`);
 
+  const ai = getAI();
   const uploadResult = await ai.files.upload({
     file: filePath,
     config: { mimeType },
@@ -36,7 +43,7 @@ async function uploadToGemini(filePath: string, mimeType: string): Promise<strin
     attempts++;
     console.log(`Processing... (${attempts * 5}s)`);
     await new Promise((resolve) => setTimeout(resolve, 5000));
-    fileInfo = await ai.files.get({ name: fileName });
+    fileInfo = await getAI().files.get({ name: fileName });
   }
 
   if (fileInfo.state === "FAILED") {
@@ -73,7 +80,7 @@ export async function analyzeTeaching(
     console.log("=== Step 3: Analyze ===");
     const prompt = buildAnalysisPrompt(lessonPlanText);
 
-    const result = await ai.models.generateContent({
+    const result = await getAI().models.generateContent({
       model: "gemini-2.5-flash",
       contents: [
         {

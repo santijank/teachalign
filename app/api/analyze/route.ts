@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseDocx } from "@/lib/docxParser";
 import { analyzeTeaching } from "@/lib/gemini";
 
+export const dynamic = "force-dynamic"; // Prevent pre-rendering at build time
 export const maxDuration = 300; // Vercel function timeout 5 minutes
 
 const ALLOWED_VIDEO_TYPES = [
