@@ -1,100 +1,160 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import TopNav from "@/components/TopNav";
+import GovHero from "@/components/GovHero";
+import GovUploadForm from "@/components/GovUploadForm";
+import GovLoadingState from "@/components/GovLoadingState";
+import GovDashboard from "@/components/GovDashboard";
+import { AnalysisResult, ApiResponse } from "@/types/analysis";
+
+type AppState = "home" | "form" | "loading" | "result" | "error";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [state, setState] = useState<AppState>("home");
+  const [currentPage, setCurrentPage] = useState("home");
+  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState("");
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  const handleSubmit = async (videoFile: File, docxFile: File) => {
+    setState("loading");
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("videoFile", videoFile);
+      formData.append("lessonPlanFile", docxFile);
+
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data: ApiResponse = await response.json();
+
+      if (data.success && data.data) {
+        setResult(data.data);
+        setState("result");
+        setCurrentPage("dashboard");
+      } else {
+        setError(data.error || "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+        setState("error");
+      }
+    } catch {
+      setError("ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง");
+      setState("error");
+    }
+  };
+
+  const handleNavigate = (page: string) => {
+    setCurrentPage(page);
+    if (page === "home") {
+      setState("home");
+    } else if (page === "analyze") {
+      setState("form");
+    } else if (page === "dashboard" || page === "report") {
+      if (result) {
+        setState("result");
+      } else {
+        setState("form");
+        setCurrentPage("analyze");
+      }
+    }
+  };
+
+  const handleStartFromHero = () => {
+    setState("form");
+    setCurrentPage("analyze");
+  };
+
+  const handleExportPdf = () => {
+    window.print();
+  };
+
+  const handleReset = () => {
+    setState("form");
+    setResult(null);
+    setError("");
+    setCurrentPage("analyze");
+  };
+
+  return (
+    <div className="min-h-screen bg-gov-bg flex flex-col">
+      <TopNav
+        currentPage={currentPage}
+        onNavigate={handleNavigate}
+        showMenu={state !== "home"}
+      />
+
+      {/* Home / Hero */}
+      {state === "home" && (
+        <GovHero onStart={handleStartFromHero} />
+      )}
+
+      {/* Main Content (non-home states) */}
+      {state !== "home" && (
+        <main className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-8">
+          {state === "form" && (
+            <GovUploadForm onSubmit={handleSubmit} isLoading={false} />
+          )}
+
+          {state === "loading" && <GovLoadingState />}
+
+          {state === "result" && result && (
+            <GovDashboard
+              result={result}
+              onExportPdf={handleExportPdf}
+              onReset={handleReset}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          )}
+
+          {state === "error" && (
+            <div className="max-w-2xl mx-auto py-16">
+              <div className="bg-gov-card border border-gov-border p-8">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 bg-gov-danger flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-base font-semibold text-gov-danger font-prompt mb-2">
+                      เกิดข้อผิดพลาดในการวิเคราะห์
+                    </h3>
+                    <p className="text-sm text-gov-text-secondary font-prompt whitespace-pre-line mb-4">
+                      {error}
+                    </p>
+                    <button
+                      onClick={handleReset}
+                      className="px-6 py-2 bg-gov-primary text-white text-sm font-prompt hover:bg-gov-primary-light transition-colors"
+                    >
+                      ลองใหม่อีกครั้ง
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* Footer */}
+      <footer className="border-t border-gov-border mt-auto bg-gov-card">
+        <div className="max-w-[1400px] mx-auto px-6 py-4">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-2">
+            <div className="text-center sm:text-left">
+              <p className="text-xs text-gov-text-muted font-prompt">
+                สำนักงานเขตพื้นที่การศึกษาประถมศึกษานครปฐม เขต 1
+              </p>
+              <p className="text-[10px] text-gov-text-muted font-prompt mt-0.5">
+                TeachAlign &mdash; ระบบวิเคราะห์ความสอดคล้องการสอน
+              </p>
+            </div>
+            <p className="text-[10px] text-gov-text-muted font-prompt">
+              Powered by Gemini AI &bull; Bloom&apos;s Taxonomy &bull; Tyler&apos;s Model
+            </p>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
       </footer>
     </div>
   );
