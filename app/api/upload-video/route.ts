@@ -19,6 +19,9 @@ export async function POST(request: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       }
 
+      let startTime = Date.now();
+      let videoSizeMB = 0;
+
       try {
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) {
@@ -37,8 +40,8 @@ export async function POST(request: NextRequest) {
         }
 
         const videoType = videoFile.type || "video/mp4";
-        const startTime = Date.now();
-        const videoSizeMB = videoFile.size / 1024 / 1024;
+        startTime = Date.now();
+        videoSizeMB = videoFile.size / 1024 / 1024;
         sendEvent({ type: "progress", message: "กำลังบันทึกวิดีโอ..." });
 
         // Save to temp file
@@ -108,8 +111,8 @@ export async function POST(request: NextRequest) {
         trackUsage({
           timestamp: Date.now(),
           type: "upload",
-          videoSizeMB: videoSizeMB || 0,
-          durationMs: Date.now() - (startTime || Date.now()),
+          videoSizeMB,
+          durationMs: Date.now() - startTime,
           success: false,
         });
         const message = error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการอัปโหลด";
