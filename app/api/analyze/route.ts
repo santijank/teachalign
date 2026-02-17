@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { parseDocx } from "@/lib/docxParser";
 import { analyzeWithFileUri } from "@/lib/gemini";
+import { trackUsage } from "@/lib/usageTracker";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -17,6 +18,8 @@ export async function POST(request: NextRequest) {
       const keepAlive = setInterval(() => {
         sendEvent({ type: "progress", message: "กำลังวิเคราะห์..." });
       }, 10000);
+
+      const startTime = Date.now();
 
       try {
         const formData = await request.formData();
@@ -56,10 +59,25 @@ export async function POST(request: NextRequest) {
         sendEvent({ type: "progress", message: "กำลังวิเคราะห์ด้วย AI..." });
         const result = await analyzeWithFileUri(fileUri, mimeType, lessonPlanText);
 
+        trackUsage({
+          timestamp: Date.now(),
+          type: "analyze",
+          videoSizeMB: 0,
+          durationMs: Date.now() - startTime,
+          success: true,
+        });
+
         sendEvent({ type: "done", data: result });
         controller.close();
       } catch (error) {
         console.error("Analysis error:", error);
+        trackUsage({
+          timestamp: Date.now(),
+          type: "analyze",
+          videoSizeMB: 0,
+          durationMs: Date.now() - startTime,
+          success: false,
+        });
         const message = error instanceof Error ? error.message : "เกิดข้อผิดพลาด กรุณาลองใหม่";
         sendEvent({ type: "error", error: message });
         controller.close();

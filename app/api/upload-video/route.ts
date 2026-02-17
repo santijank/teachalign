@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { GoogleGenAI } from "@google/genai";
+import { trackUsage } from "@/lib/usageTracker";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -36,6 +37,8 @@ export async function POST(request: NextRequest) {
         }
 
         const videoType = videoFile.type || "video/mp4";
+        const startTime = Date.now();
+        const videoSizeMB = videoFile.size / 1024 / 1024;
         sendEvent({ type: "progress", message: "กำลังบันทึกวิดีโอ..." });
 
         // Save to temp file
@@ -86,6 +89,14 @@ export async function POST(request: NextRequest) {
           return;
         }
 
+        trackUsage({
+          timestamp: Date.now(),
+          type: "upload",
+          videoSizeMB,
+          durationMs: Date.now() - startTime,
+          success: true,
+        });
+
         sendEvent({
           type: "done",
           fileUri: fileInfo.uri,
@@ -94,6 +105,13 @@ export async function POST(request: NextRequest) {
         controller.close();
       } catch (error) {
         console.error("Upload error:", error);
+        trackUsage({
+          timestamp: Date.now(),
+          type: "upload",
+          videoSizeMB: videoSizeMB || 0,
+          durationMs: Date.now() - (startTime || Date.now()),
+          success: false,
+        });
         const message = error instanceof Error ? error.message : "เกิดข้อผิดพลาดในการอัปโหลด";
         sendEvent({ type: "error", error: message });
         controller.close();

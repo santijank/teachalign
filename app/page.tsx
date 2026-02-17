@@ -7,6 +7,7 @@ import GovUploadForm from "@/components/GovUploadForm";
 import GovLoadingState from "@/components/GovLoadingState";
 import GovDashboard from "@/components/GovDashboard";
 import { AnalysisResult } from "@/types/analysis";
+import GovUsageStats from "@/components/GovUsageStats";
 
 type AppState = "home" | "form" | "loading" | "result" | "error";
 
@@ -248,7 +249,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-gov-border mt-auto bg-gov-card">
         <div className="max-w-[1400px] mx-auto px-6 py-4">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-2">
+          <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
             <div className="text-center sm:text-left">
               <p className="text-xs text-gov-text-muted font-prompt">
                 สำนักงานเขตพื้นที่การศึกษาประถมศึกษานครปฐม เขต 1
@@ -257,9 +258,12 @@ export default function Home() {
                 TeachAlign &mdash; ระบบวิเคราะห์ความสอดคล้องการสอน
               </p>
             </div>
-            <p className="text-[10px] text-gov-text-muted font-prompt">
-              Powered by Gemini AI &bull; Bloom&apos;s Taxonomy &bull; Tyler&apos;s Model
-            </p>
+            <div className="flex flex-col items-end gap-1">
+              <p className="text-[10px] text-gov-text-muted font-prompt">
+                Powered by Gemini AI &bull; Bloom&apos;s Taxonomy &bull; Tyler&apos;s Model
+              </p>
+              <GovUsageStats />
+            </div>
           </div>
         </div>
       </footer>
