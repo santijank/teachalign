@@ -34,37 +34,55 @@ export async function POST(request: NextRequest) {
         const videoFile = formData.get("videoFile") as File;
 
         if (!videoFile) {
-          sendEvent({ type: "error", error: "กรุณาอัปโหลดไฟล์วิดีโอ" });
+          sendEvent({ type: "error", error: "กรุณาอัปโหลดไฟล์วิดีโอหรือเสียง" });
           controller.close();
           return;
         }
 
-        const videoType = videoFile.type || "video/mp4";
+        // Detect mime type - support both video and audio files
+        let mediaType = videoFile.type || "video/mp4";
+        const fileName = videoFile.name.toLowerCase();
+
+        // Fix mime type based on file extension if browser didn't detect correctly
+        if (fileName.endsWith(".mp3")) mediaType = "audio/mpeg";
+        else if (fileName.endsWith(".m4a")) mediaType = "audio/mp4";
+        else if (fileName.endsWith(".wav")) mediaType = "audio/wav";
+        else if (fileName.endsWith(".ogg")) mediaType = "audio/ogg";
+        else if (fileName.endsWith(".flac")) mediaType = "audio/flac";
+
+        const isAudio = mediaType.startsWith("audio/");
+        const mediaLabel = isAudio ? "เสียง" : "วิดีโอ";
+
         startTime = Date.now();
         videoSizeMB = videoFile.size / 1024 / 1024;
-        sendEvent({ type: "progress", message: "กำลังบันทึกวิดีโอ..." });
+        sendEvent({ type: "progress", message: `กำลังบันทึก${mediaLabel}...` });
 
         // Save to temp file
-        const ext = videoType.includes("mp4") ? "mp4" : videoType.split("/")[1] || "mp4";
+        const extMap: Record<string, string> = {
+          "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/wav": "wav",
+          "audio/ogg": "ogg", "audio/flac": "flac", "video/mp4": "mp4",
+          "video/quicktime": "mov", "video/x-msvideo": "avi", "video/webm": "webm",
+        };
+        const ext = extMap[mediaType] || mediaType.split("/")[1] || "mp4";
         const tempDir = os.tmpdir();
-        tempFilePath = path.join(tempDir, `teachalign_video_${Date.now()}.${ext}`);
+        tempFilePath = path.join(tempDir, `teachalign_media_${Date.now()}.${ext}`);
         const videoBuffer = Buffer.from(await videoFile.arrayBuffer());
         fs.writeFileSync(tempFilePath, videoBuffer);
 
         sendEvent({
           type: "progress",
-          message: `กำลังอัปโหลดไปยัง Gemini (${(videoBuffer.length / 1024 / 1024).toFixed(0)} MB)...`,
+          message: `กำลังอัปโหลด${mediaLabel}ไปยัง Gemini (${(videoBuffer.length / 1024 / 1024).toFixed(0)} MB)...`,
         });
 
         // Upload to Gemini File API
         const ai = new GoogleGenAI({ apiKey });
         const uploadResult = await ai.files.upload({
           file: tempFilePath,
-          config: { mimeType: videoType },
+          config: { mimeType: mediaType },
         });
 
-        const fileName = uploadResult.name!;
-        sendEvent({ type: "progress", message: "อัปโหลดสำเร็จ กำลังประมวลผลวิดีโอ..." });
+        const geminiFileName = uploadResult.name!;
+        sendEvent({ type: "progress", message: `อัปโหลดสำเร็จ กำลังประมวลผล${mediaLabel}...` });
 
         // Wait for processing - send keep-alive events
         let fileInfo = uploadResult;
@@ -74,20 +92,20 @@ export async function POST(request: NextRequest) {
           attempts++;
           sendEvent({
             type: "progress",
-            message: `Gemini กำลังประมวลผลวิดีโอ... (${attempts * 5} วินาที)`,
+            message: `Gemini กำลังประมวลผล${mediaLabel}... (${attempts * 5} วินาที)`,
           });
           await new Promise((resolve) => setTimeout(resolve, 5000));
-          fileInfo = await ai.files.get({ name: fileName });
+          fileInfo = await ai.files.get({ name: geminiFileName });
         }
 
         if (fileInfo.state === "FAILED") {
-          sendEvent({ type: "error", error: "Gemini ไม่สามารถประมวลผลวิดีโอได้ กรุณาตรวจสอบไฟล์" });
+          sendEvent({ type: "error", error: `Gemini ไม่สามารถประมวลผล${mediaLabel}ได้ กรุณาตรวจสอบไฟล์` });
           controller.close();
           return;
         }
 
         if (fileInfo.state === "PROCESSING") {
-          sendEvent({ type: "error", error: "วิดีโอใช้เวลาประมวลผลนานเกินไป กรุณาลองใช้คลิปสั้นลง" });
+          sendEvent({ type: "error", error: `${mediaLabel}ใช้เวลาประมวลผลนานเกินไป กรุณาลองใช้ไฟล์ที่สั้นลง` });
           controller.close();
           return;
         }
@@ -103,7 +121,7 @@ export async function POST(request: NextRequest) {
         sendEvent({
           type: "done",
           fileUri: fileInfo.uri,
-          mimeType: videoType,
+          mimeType: mediaType,
         });
         controller.close();
       } catch (error) {

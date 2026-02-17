@@ -34,7 +34,7 @@ export default function GovUploadForm({ onSubmit, isLoading }: GovUploadFormProp
           วิเคราะห์ความสอดคล้องใหม่
         </h2>
         <p className="text-sm text-gov-text-secondary mt-1 font-prompt">
-          อัปโหลดคลิปวิดีโอการสอนและแผนการสอนเพื่อเริ่มการวิเคราะห์
+          อัปโหลดคลิปวิดีโอ/เสียงการสอนและแผนการสอนเพื่อเริ่มการวิเคราะห์
         </p>
         <div className="h-[2px] bg-gov-primary w-16 mt-3"></div>
       </div>
@@ -47,7 +47,7 @@ export default function GovUploadForm({ onSubmit, isLoading }: GovUploadFormProp
               <span className="text-white text-xs font-inter font-bold">1</span>
             </div>
             <h3 className="text-sm font-semibold text-gov-text-primary font-prompt">
-              คลิปวิดีโอการสอน
+              คลิปวิดีโอ / เสียงการสอน
             </h3>
           </div>
 
@@ -62,7 +62,7 @@ export default function GovUploadForm({ onSubmit, isLoading }: GovUploadFormProp
             <input
               ref={videoInputRef}
               type="file"
-              accept="video/*"
+              accept="video/*,audio/*,.mp3,.m4a,.wav,.ogg"
               onChange={(e) => e.target.files?.[0] && setVideoFile(e.target.files[0])}
               className="hidden"
               disabled={isLoading}
@@ -97,10 +97,10 @@ export default function GovUploadForm({ onSubmit, isLoading }: GovUploadFormProp
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
                 <p className="text-sm text-gov-text-secondary font-prompt">
-                  คลิกเพื่อเลือกไฟล์วิดีโอ หรือลากไฟล์มาวาง
+                  คลิกเพื่อเลือกไฟล์วิดีโอหรือเสียง หรือลากไฟล์มาวาง
                 </p>
                 <p className="text-xs text-gov-text-muted mt-1 font-prompt">
-                  รองรับ MP4, MOV, AVI, WEBM (สูงสุด 2 GB)
+                  รองรับ MP4, MOV, AVI, WEBM, MP3, M4A, WAV (สูงสุด 2 GB)
                 </p>
               </>
             )}
@@ -197,7 +197,7 @@ export default function GovUploadForm({ onSubmit, isLoading }: GovUploadFormProp
         <ul className="text-xs text-gov-text-secondary space-y-1.5 font-prompt">
           <li className="flex items-start gap-2">
             <span className="text-gov-secondary mt-0.5">&#8226;</span>
-            คลิปวิดีโอควรมีเสียงชัดเจน เพื่อให้ AI วิเคราะห์ได้แม่นยำ
+            คลิปวิดีโอ/เสียงควรมีเสียงชัดเจน เพื่อให้ AI วิเคราะห์ได้แม่นยำ
           </li>
           <li className="flex items-start gap-2">
             <span className="text-gov-secondary mt-0.5">&#8226;</span>

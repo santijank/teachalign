@@ -79,15 +79,17 @@ export default function Home() {
     setError("");
 
     try {
-      // === Step 1: Upload video via streaming (avoids timeout) ===
-      setLoadingMessage("กำลังเตรียมอัปโหลดวิดีโอ...");
+      // === Step 1: Upload media via streaming (avoids timeout) ===
+      const isAudio = videoFile.type.startsWith("audio/") || /\.(mp3|m4a|wav|ogg|flac)$/i.test(videoFile.name);
+      const mediaLabel = isAudio ? "เสียง" : "วิดีโอ";
+      setLoadingMessage(`กำลังเตรียมอัปโหลด${mediaLabel}...`);
 
       const { fileUri, mimeType } = await uploadVideoViaStream(
         videoFile,
         setLoadingMessage
       );
 
-      console.log("Video uploaded! fileUri:", fileUri);
+      console.log(`${mediaLabel} uploaded! fileUri:`, fileUri);
 
       // === Step 2: Analyze with fileUri + docx (SSE stream) ===
       setLoadingMessage("กำลังวิเคราะห์ความสอดคล้อง...");
