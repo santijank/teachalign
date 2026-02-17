@@ -11,7 +11,11 @@ const steps = [
   { label: "กำลังสรุปผลการวิเคราะห์", desc: "รวบรวมและจัดทำรายงาน" },
 ];
 
-export default function GovLoadingState() {
+interface GovLoadingStateProps {
+  message?: string;
+}
+
+export default function GovLoadingState({ message }: GovLoadingStateProps) {
   const [currentStep, setCurrentStep] = useState(0);
 
   useEffect(() => {
@@ -35,7 +39,7 @@ export default function GovLoadingState() {
             กำลังดำเนินการวิเคราะห์
           </h2>
           <p className="text-sm text-gov-text-secondary mt-1 font-prompt">
-            กรุณารอสักครู่ ระบบกำลังประมวลผล
+            {message || "กรุณารอสักครู่ ระบบกำลังประมวลผล"}
           </p>
         </div>
 

@@ -1,45 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseDocx } from "@/lib/docxParser";
-import { analyzeTeaching } from "@/lib/gemini";
+import { analyzeWithFileUri } from "@/lib/gemini";
 
-export const dynamic = "force-dynamic"; // Prevent pre-rendering at build time
-export const maxDuration = 300; // Vercel function timeout 5 minutes
-
-const ALLOWED_VIDEO_TYPES = [
-  "video/mp4",
-  "video/mpeg",
-  "video/mov",
-  "video/avi",
-  "video/x-flv",
-  "video/mpg",
-  "video/webm",
-  "video/wmv",
-  "video/3gpp",
-  "video/quicktime",
-];
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const videoFile = formData.get("videoFile") as File;
+    const fileUri = formData.get("fileUri") as string;
+    const mimeType = formData.get("mimeType") as string;
     const lessonPlanFile = formData.get("lessonPlanFile") as File;
 
     // Validate inputs
-    if (!videoFile || !lessonPlanFile) {
+    if (!fileUri || !mimeType) {
       return NextResponse.json(
-        { success: false, error: "กรุณาอัปโหลดทั้งวิดีโอและแผนการสอน" },
+        { success: false, error: "กรุณาอัปโหลดวิดีโอก่อน" },
         { status: 400 }
       );
     }
 
-    // Validate video file type
-    const videoType = videoFile.type || "video/mp4";
-    if (!ALLOWED_VIDEO_TYPES.includes(videoType) && !videoType.startsWith("video/")) {
+    if (!lessonPlanFile) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "กรุณาอัปโหลดไฟล์วิดีโอ (เช่น .mp4, .mov, .avi, .webm)",
-        },
+        { success: false, error: "กรุณาอัปโหลดแผนการสอน" },
         { status: 400 }
       );
     }
@@ -69,13 +52,10 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`Lesson plan parsed: ${lessonPlanText.length} characters`);
+    console.log(`Using fileUri: ${fileUri}`);
 
-    // Read video file into buffer
-    console.log(`Reading video: ${videoFile.name} (${(videoFile.size / 1024 / 1024).toFixed(1)} MB)`);
-    const videoBuffer = Buffer.from(await videoFile.arrayBuffer());
-
-    // Analyze with Gemini
-    const result = await analyzeTeaching(videoBuffer, videoType, lessonPlanText);
+    // Analyze with Gemini using pre-uploaded fileUri
+    const result = await analyzeWithFileUri(fileUri, mimeType, lessonPlanText);
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

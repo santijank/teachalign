@@ -10,38 +10,139 @@ import { AnalysisResult, ApiResponse } from "@/types/analysis";
 
 type AppState = "home" | "form" | "loading" | "result" | "error";
 
+async function uploadVideoToGemini(
+  videoFile: File,
+  apiKey: string,
+  onProgress: (msg: string) => void
+): Promise<{ fileUri: string; mimeType: string }> {
+  const mimeType = videoFile.type || "video/mp4";
+
+  // Step 1: Start resumable upload
+  onProgress("กำลังเตรียมอัปโหลดวิดีโอ...");
+  const startRes = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(videoFile.size),
+        "X-Goog-Upload-Header-Content-Type": mimeType,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        file: { displayName: videoFile.name },
+      }),
+    }
+  );
+
+  const uploadUrl = startRes.headers.get("X-Goog-Upload-URL");
+  if (!uploadUrl) {
+    throw new Error("ไม่สามารถเริ่มอัปโหลดได้ กรุณาลองใหม่");
+  }
+
+  // Step 2: Upload file data
+  onProgress(`กำลังอัปโหลดวิดีโอ (${(videoFile.size / 1024 / 1024).toFixed(0)} MB)...`);
+  const uploadRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Length": String(videoFile.size),
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize",
+    },
+    body: videoFile,
+  });
+
+  const uploadData = await uploadRes.json();
+  const fileName = uploadData?.file?.name;
+  if (!fileName) {
+    throw new Error("อัปโหลดวิดีโอล้มเหลว กรุณาลองใหม่");
+  }
+
+  // Step 3: Wait for processing
+  onProgress("Gemini กำลังประมวลผลวิดีโอ...");
+  let fileState = uploadData.file.state;
+  let fileUri = uploadData.file.uri;
+  let attempts = 0;
+
+  while (fileState === "PROCESSING" && attempts < 60) {
+    attempts++;
+    onProgress(`ประมวลผลวิดีโอ... (${attempts * 5} วินาที)`);
+    await new Promise((r) => setTimeout(r, 5000));
+
+    const checkRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/files/${fileName}?key=${apiKey}`
+    );
+    const checkData = await checkRes.json();
+    fileState = checkData.state;
+    fileUri = checkData.uri;
+  }
+
+  if (fileState === "FAILED") {
+    throw new Error("Gemini ไม่สามารถประมวลผลวิดีโอได้ กรุณาตรวจสอบไฟล์");
+  }
+  if (fileState === "PROCESSING") {
+    throw new Error("วิดีโอใช้เวลาประมวลผลนานเกินไป กรุณาลองใช้คลิปสั้นลง");
+  }
+
+  return { fileUri, mimeType };
+}
+
 export default function Home() {
   const [state, setState] = useState<AppState>("home");
   const [currentPage, setCurrentPage] = useState("home");
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
+  const [loadingMessage, setLoadingMessage] = useState("");
 
   const handleSubmit = async (videoFile: File, docxFile: File) => {
     setState("loading");
     setError("");
 
     try {
-      const formData = new FormData();
-      formData.append("videoFile", videoFile);
-      formData.append("lessonPlanFile", docxFile);
+      // === Step 1: Get API key from server ===
+      setLoadingMessage("กำลังเตรียมระบบ...");
+      const keyRes = await fetch("/api/gemini-key");
+      const keyData = await keyRes.json();
+      if (!keyData.success) {
+        throw new Error(keyData.error || "ไม่สามารถเชื่อมต่อระบบได้");
+      }
 
-      const response = await fetch("/api/analyze", {
+      // === Step 2: Upload video directly to Gemini from browser ===
+      const { fileUri, mimeType } = await uploadVideoToGemini(
+        videoFile,
+        keyData.apiKey,
+        setLoadingMessage
+      );
+
+      console.log("Video uploaded! fileUri:", fileUri);
+
+      // === Step 3: Analyze with fileUri + docx (lightweight request) ===
+      setLoadingMessage("กำลังวิเคราะห์ความสอดคล้อง...");
+
+      const analyzeFormData = new FormData();
+      analyzeFormData.append("fileUri", fileUri);
+      analyzeFormData.append("mimeType", mimeType);
+      analyzeFormData.append("lessonPlanFile", docxFile);
+
+      const analyzeResponse = await fetch("/api/analyze", {
         method: "POST",
-        body: formData,
+        body: analyzeFormData,
       });
 
-      const data: ApiResponse = await response.json();
+      const analyzeData: ApiResponse = await analyzeResponse.json();
 
-      if (data.success && data.data) {
-        setResult(data.data);
+      if (analyzeData.success && analyzeData.data) {
+        setResult(analyzeData.data);
         setState("result");
         setCurrentPage("dashboard");
       } else {
-        setError(data.error || "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
+        setError(analyzeData.error || "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง");
         setState("error");
       }
-    } catch {
-      setError("ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้";
+      setError(msg);
       setState("error");
     }
   };
@@ -98,7 +199,7 @@ export default function Home() {
             <GovUploadForm onSubmit={handleSubmit} isLoading={false} />
           )}
 
-          {state === "loading" && <GovLoadingState />}
+          {state === "loading" && <GovLoadingState message={loadingMessage} />}
 
           {state === "result" && result && (
             <GovDashboard
